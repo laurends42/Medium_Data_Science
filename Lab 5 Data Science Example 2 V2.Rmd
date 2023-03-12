@@ -1,0 +1,324 @@
+---
+title: "Lab 5 - Part 2 - Data Science Example 2"
+author: "Lauren Jensen"
+date: "2023-02-16"
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+I'm going to take the NBA Salary dataset which can be found from Kaggle. I'm doing this because by popular demand I was asked to do another example. I'm going to show GLMs.
+
+
+## 1) Import Data and Load Packages
+
+```{r load packages,  error=FALSE, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(plotly)
+library(magrittr)
+library(dplyr)
+library(psych)
+library(arm)
+library(gridExtra)
+library(lmtest)
+library(effects)
+library(tidyverse)
+library(alr4)      # Data
+library(rlang)     # Non-standard evaluation for missplot function
+library(patchwork) # arranging multiple ggplots
+library(GGally)    # Pairs plot
+library(ggdag)     # To draw causal DAG
+library(broom)     # To work with model results
+library(ggthemes) 
+library(scales) 
+library(mice)
+library(fastDummies)
+library(ggcorrplot)
+library(mlbench)
+library(caret)
+library(rpart) #tree model library
+library(psych)
+library(data.table)
+library(DiagrammeR)
+library(corrplot)
+```
+
+Load Data
+```{r load data}
+nba <- read.csv("C:/Users/ljens/Desktop/UW Class/R Certification/Class 5/NBA_season1718_salary.csv",as.is=TRUE,strip.white=TRUE)
+
+stats <- read.csv("C:/Users/ljens/Desktop/UW Class/R Certification/Class 5/Seasons_Stats.csv",as.is=TRUE,strip.white=TRUE)
+```
+
+## 2) Exploratory Analysis and Data Cleansing
+
+**Summary Statistics**
+```{r summary statistics}
+dim(nba) 
+summary(nba)
+head(nba)
+```
+
+```{r summary statistics 2}
+dim(stats) 
+summary(stats)
+head(stats)
+```
+
+**Because the one dataset only has 17-18 data I want to limit the stats dataset**
+```{r limit data}
+stats17 <- 
+  stats %>% filter(Year >= 2017) %>% 
+  dplyr::select(Year:G, MP, PER, FG:PTS) %>% 
+  distinct(Player, .keep_all = TRUE) %>% 
+  mutate(MPG = MP/G, PPG = PTS/G, APG = AST/G, 
+         RPG = TRB/G, TOPG = TOV/G, BPG = BLK/G, SPG = STL/G) 
+```
+
+**Merge the data**
+```{r join the data}
+nba_final <- merge(stats17, nba, by.x = "Player", by.y = "Player")
+names(nba_final)[40] <- "salary17_18"
+nba_final <- nba_final[-39]
+```
+
+**Check for missing values**
+```{r check for missing data}
+sapply(nba_final, function(x) sum(is.na(x)))
+```
+
+**Correlation and Variable Importance Selection**
+```{r corrplot 1}
+corrplot(cor(nba_final %>% 
+               dplyr::select(salary17_18, MPG:SPG, 
+                      Age, PER, contains("%")), 
+             use = "complete.obs"), 
+         method = "circle",type = "upper")
+```
+
+```{r corrplot 2}
+nba_final2 <- 
+  nba_final %>% 
+  dplyr::select(salary17_18, PPG, MPG, TOPG, RPG, PER, SPG, APG)
+ggpairs(nba_final2)
+```
+
+**What does this tell me?**
+
+This is a really small dataset (shudder) as it is 573 records.  In an ideal world I so wouldn't use this dataset.  It's also weirdly clean.. as there are no missing values.
+
+**Let's do some plots anyways**
+```{r plots 1, error=FALSE, warning=FALSE, message=FALSE}
+names(nba_final)[5] <- "Team"
+plot_ly(data = nba_final, x = ~salary17_18, y = ~PPG, color = ~Team,
+        hoverinfo = "text",
+        text = ~paste("Player: ", Player,
+                      "<br>Salary: ", format(salary17_18, big.mark = ","),"$",
+                      "<br>PPG: ", round(PPG, digits = 3),
+                      "<br>Team: ", Team)) %>% 
+  layout(
+    title = "Salary vs Point Per Game",
+    xaxis = list(title = "Salary USD"),
+    yaxis = list(title = "Point per Game")
+  )
+```
+
+```{r plot 2}
+ggplot(data = nba_final, aes(x = Player, y = salary17_18)) +
+    geom_col(fill='midnightblue') +
+    labs(title = 'Salary by Player', 
+         x = NULL, y = 'Sum', fill = NULL) +
+    scale_y_continuous(labels = comma) +
+    theme_bw() + theme(axis.text.x = element_text(angle = 0), legend.position = 'none', text = element_text(family = 'serif'))
+
+ggplot(data = nba_final, aes(x = Team, y = salary17_18)) +
+    geom_col(fill='midnightblue') +
+    labs(title = 'Salary by Team', 
+         x = NULL, y = 'Sum', fill = NULL) +
+    scale_y_continuous(labels = comma) +
+    theme_bw() + theme(axis.text.x = element_text(angle = 0), legend.position = 'none', text = element_text(family = 'serif'))
+```
+
+That was actually insightful.  The team chart is somewhat hard to read but what it does tell you? I think? that the NBA has rules on how much a team can spend on salries but I could be wrong.
+
+Let's do a density plot
+```{r density plot}
+# Basic density plot with custom color
+ggplot(nba_final, aes(x=salary17_18, color=Team)) + 
+  
+# color property for changing color of plot
+  # geom_density() function plots the density plot
+geom_density()
+```
+
+I actually hate these type of graphs as I totally think they are worthless but I'll show it anyways because in this particular case it's going to prove something worth proving. Friendly advice never show boxplot to a non analyst person they will just hate you.
+
+```{r boxplot}
+ggplot(nba_final,aes(x=factor(Team),y=salary17_18,fill=factor(Team))) + geom_boxplot(outlier.colour="black", outlier.shape=16,
+outlier.size=2, notch=FALSE) + theme_classic()+labs(title = "Distribution of Salaries",x="Team",y="Salary")+
+  theme(legend.position="none")
+```
+
+**So what does this tell me?**
+I'm not going to do all the talking so what do you think this tells you?
+
+1) What did you learn?
+2) What do you wish to know that you don't?
+3) Are there any concerns?
+4) How you should you divide out the predictions? Should you treat all players the same? All teams the same? Why? Or Why not?
+
+You could do this in 1 of 2 ways.  You could either break it out and consider teams as a factor but the model going to do that somewhat anyways for you.  Or you could break out the super high players from everyone else by basically creating buckets.
+
+**Bucket Your Data**
+You can probably get away with doing 2 buckets, high and everyone else.
+```{r bucket 1}
+nba_final$salarygroup[nba_final$salary17_18<=1000000] <- 'low'
+nba_final$salarygroup[nba_final$salary17_18>=1000001] <- 'high'
+
+table(nba_final$salarygroup)
+```
+
+```{r final columns}
+nba_final3 <- nba_final[c('Pos', 'Age', 'Team', 'G','MP', 'PER','FG',
+                             'FGA', 'PPG','MPG', 'TOPG', 'RPG', 'PER',
+                             'SPG', 'APG', 'PTS', 'salary17_18')]
+```
+
+**Question for the group**
+Why can't I use "x" and "salary17_18" in a correlation problem? What is the problem with "x"?
+
+## Train/Test Time
+Another thing that makes this dataset uck, is that there is no 3rd dataset.  But such is life.
+```{r train and test split}
+#make this example reproducible
+set.seed(42)
+
+#use 70% of dataset as training set and 30% as test set
+sample <- sample(c(TRUE, FALSE), nrow(nba_final3), replace=TRUE, prob=c(0.7,0.3))
+train  <- nba_final3[sample, ]
+test   <- nba_final3[!sample, ]
+```
+
+## Feature Selection Time
+
+```{r feature selection via tree}
+fit <- rpart(salary17_18 ~ Pos + Age + Team + G + MP + PER + FG + 
+               FGA + PPG + MPG + TOPG + RPG + PER + SPG + APG + PTS, 
+             data = train)
+df <- data.frame(imp = fit$variable.importance)
+df2 <- df %>% 
+  tibble::rownames_to_column() %>% 
+  dplyr::rename("variable" = rowname) %>% 
+  dplyr::arrange(imp) %>%
+  dplyr::mutate(variable = forcats::fct_inorder(variable))
+ggplot2::ggplot(df2) +
+  geom_col(aes(x = variable, y = imp),
+           col = "black", show.legend = F) +
+  coord_flip() +
+  scale_fill_grey() +
+  theme_bw()
+
+```
+
+
+## Model Time
+
+Let's start with linear regression. Yes you can use the ln call and if anything that's probably easier.  But to make the comparision easier I'm not going to.
+```{r linear model time}
+lr1 <- glm(salary17_18 ~ MP, data = train)
+lr2 <- glm(salary17_18 ~ MP + PTS, data = train)
+lr3 <- glm(salary17_18 ~ MP + PTS + FG, data = train)
+lr4 <- glm(salary17_18 ~ MP + PTS + FG + FGA, data = train)
+lr5 <- glm(salary17_18 ~ MP + PTS + FG + FGA + MPG, data = train)
+lr6 <- glm(salary17_18 ~ MP + PTS + FG + FGA + MPG + RPG, data = train)
+lr7 <- glm(salary17_18 ~ MP + PTS + FG + FGA + MPG + RPG + Team, data = train)
+```
+
+Poisson Time
+```{r Poisson Time}
+poisson1 <- glm(salary17_18 ~ MP, data = train, family = poisson)
+poisson2 <- glm(salary17_18 ~ MP + PTS, data = train, family = poisson)
+poisson3 <- glm(salary17_18 ~ MP + PTS + FG, data = train, 
+                family = poisson)
+poisson4 <- glm(salary17_18 ~ MP + PTS + FG + FGA, 
+                data = train, family = poisson)
+poisson5 <- glm(salary17_18 ~ MP + PTS + FG + FGA + MPG, 
+                data = train, family = poisson)
+poisson6 <- glm(salary17_18 ~ MP + PTS + FG + FGA + MPG + RPG, 
+                data = train, family = poisson)
+poisson7 <- glm(salary17_18 ~ MP + PTS + FG + FGA + MPG + RPG + Team, 
+                data = train, family = poisson)
+```
+
+Negative Binomial
+```{r negative}
+nb1 <- glm.nb(salary17_18 ~ MP, data = train)
+nb2 <- glm.nb(salary17_18 ~ MP + PTS, data = train)
+nb3 <- glm.nb(salary17_18 ~ MP + PTS + FG, data = train)
+nb4 <- glm.nb(salary17_18 ~ MP + PTS + FG + FGA, data = train)
+nb5 <- glm.nb(salary17_18 ~ MP + PTS + FG + FGA + MPG, data = train)
+nb6 <- glm.nb(salary17_18 ~ MP + PTS + FG + FGA + MPG + RPG, data = train)
+nb7 <- glm.nb(salary17_18 ~ MP + PTS + FG + FGA + MPG + RPG + Team, 
+              data = train)
+```
+
+Quasi-Likelihood
+```{r quasi}
+quasi1 <- glm(salary17_18 ~ MP, data = train, family = quasipoisson)
+
+quasi2 <- glm(salary17_18 ~ MP + PTS, data = train, family = quasipoisson)
+
+quasi3 <- glm(salary17_18 ~ MP + PTS + FG, data = train, 
+              family = quasipoisson)
+
+quasi4 <- glm(salary17_18 ~ MP + PTS + FG + FGA, data = train, 
+              family = quasipoisson)
+
+quasi5 <- glm(salary17_18 ~ MP + PTS + FG + FGA + MPG, data = train, 
+              family = quasipoisson)
+
+quasi6 <- glm(salary17_18 ~ MP + PTS + FG + FGA + MPG + RPG, data = train,
+              family = quasipoisson)
+
+quasi7 <- glm(salary17_18 ~ MP + PTS + FG + FGA + MPG + RPG + Team, 
+              data = train, family = quasipoisson)
+
+```
+
+**Ok I built a bunch of models now what?**
+Now I'm decently confident these are bad but which one is the "least bad".  How would I know? What should I look for?
+
+**Let's plot some residuals**
+```{r residual time}
+par(mfrow=c(1,2),mar=c(3,3,2,2),mgp=c(2,0.5,0))
+plot(lr1, which=c(1,3)) #linear regression 1
+plot(lr2, which=c(1,3)) #linear regression 2
+
+plot(poisson1, which=c(1,3)) #poisson regression 1
+plot(poisson2, which=c(1,3)) #poisson regression 2
+
+plot(nb1, which=c(1,3)) #NB 1
+plot(nb2, which=c(1,3)) #NB 2
+
+plot(quasi1, which=c(1,3)) #Quasi 1
+plot(quasi2, which=c(1,3)) #Quasi 2
+```
+
+**From a Residual Standpoint which has the "best" or "least worst" result?**
+
+**Let's Look at AIC and BIC. Are there any of these models that I can't use AIC or BIC for? Do you remember why?**
+```{r model AIC vs BIC}
+AIC(lr1, lr2, lr3, lr4, lr5, lr6, lr7, poisson1, poisson2, poisson3, 
+    poisson4, poisson5, poisson6, poisson7, nb1, nb2, nb3, nb4, nb5,
+    nb6, nb7)
+BIC(lr1, lr2, lr3, lr4, lr5, lr6, lr7, poisson1, poisson2, poisson3, 
+    poisson4, poisson5, poisson6, poisson7, nb1, nb2, nb3, nb4, nb5,
+    nb6, nb7, quasi1)
+```
+
+**Ok what model would you pick?  Why?**
+
+```{r summary part 2}
+summary(poisson5)
+```
