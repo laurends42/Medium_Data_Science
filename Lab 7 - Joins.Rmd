@@ -1,0 +1,13 @@
+---
+title: "Lab 7 - Joins"
+author: "Lauren Jensen"
+date: "2023-02-27"
+output: pdf_document
+---
+
+```{r l10setup, include = FALSE,echo=FALSE,message=FALSE}
+packages = c("data.table","lubridate")
+lapply(packages, library, character.only = TRUE) # this loads all libraries above
+opts_chunk$set(width=150,comment="",fig.align='center',message=FALSE,
+               warning=FALSE,cache=TRUE,dependson=-1)
+```

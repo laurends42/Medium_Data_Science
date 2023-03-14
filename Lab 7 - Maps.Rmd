@@ -1,0 +1,273 @@
+---
+title: "Mapping in R"
+author: "Lauren Jensen"
+date: "2023-02-26"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+packages = c("ggplot2","magrittr",'dplyr','ggmap','maps','sp','rgdal','sf','raster','mapproj', 'maptools', 'highcharter')
+lapply(packages, library, character.only = TRUE) # this loads all libraries above
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Quick and easy `maps`
+
+
+
+```{r l7maps1}
+library(maps)
+states <- map(database = "state")
+```
+
+What's in this object?
+
+```{r l7maps2}
+str(states)
+```
+
+<div class="col2">
+## Quick and easy `maps`
+
+
+```{r l7maps3}
+map(database = "state",regions = c("Washington","Oregon","California"), 
+    fill = T, col = "lightgreen",bg = "black")
+```
+
+
+
+```{r l7maps4,out.height='300px'}
+map(database = "county", regions = "Washington",xlim = c(-125,-122),
+    ylim = c(46.5,49),fill = T,col = "lightgreen")
+```
+
+<b>Ok, your turn: pick your favorite state(s) and do a county map in gaudy colors.</b>
+
+<font color='red'><b>Perhaps before that: what happens when you just type `map()` in the command line?</b></font>
+
+
+## Quick and easy `maps`
+
+Adding point data:
+
+```{r l7maps5}
+abam <- read.csv("C:/Users/ljens/Desktop/UW Class/R Certification/Class 7/SilverFirLocations.csv")
+p <- map(database = "state", regions = "Washington", fill = T, col="lightgreen")
+points(abam, col = 4, pch = 16)
+```
+
+
+## Quick and easy `maps` with `ggplot2`
+
+```{r l7ggplot1}
+states <- map_data(map = "state")
+ggplot(states) + geom_polygon(aes(x = long, y = lat, group = group, 
+  fill = region), color = "white") +  guides(fill = F)  
+```
+
+<b>What does `map_data()` do? Inspect `states` to see what it is and how it's structured.</b>
+
+
+## Quick and easy `maps` with `ggplot2`
+
+Changing the map projection:
+
+```{r l7ggplot2}
+ggplot(states) + geom_polygon(aes(x = long, y = lat, group = group, fill = region), color = "white") + 
+  coord_map(projection = "albers", lat0 = 20, lat1 = 50) +  guides(fill = F)
+```
+
+
+## Quick and easy `maps` with `ggplot2`
+
+Adding point data:
+
+```{r l7ggplot3}
+ggplot(states) + geom_polygon(aes(x = long, y = lat, group = group, fill = region), color = "white") + 
+    geom_point(data = abam, aes(x = lon, y = lat), color = "blue") + guides(fill = F)
+```
+
+
+## Quick and easy `maps` with `ggplot2`
+
+Adding point data:
+
+```{r l7ggplot4}
+ggplot(states) +  geom_polygon(aes(x = long, y = lat, group = group, fill = region), color="white") + 
+  geom_point(data = abam, 
+ aes(x = lon, y = lat), color = "blue") + coord_map(xlim = range(states$long), ylim = range(states$lat)) + guides(fill = F)
+```
+
+
+## Quick and easy `maps` with `ggplot2`
+
+Adding point data *and* changing projection:
+
+```{r l7ggplot5}
+ggplot(states) + geom_polygon(aes(x = long, y = lat, group = group, fill = region), color="white") + 
+  geom_point(data = abam, aes(x = lon, y = lat), color = "blue") + coord_map(projection = "albers", lat0 = 20, lat1 = 50,
+            xlim = range(states$long), ylim = range(states$lat)) +guides(fill = F)
+```
+
+
+## You can also Do This:
+
+```{r l7ggplot6,message=FALSE}
+dat <- read.csv("C:/Users/ljens/Desktop/UW Class/R Certification/Class 7/2016_US_County_Level_Presidential_Results.csv")
+data("county.fips") # from maps package
+
+counties <- map_data(map = "county") %>% 
+                mutate(polyname = paste(region, subregion, sep = ",")) %>% inner_join(county.fips) %>%
+                inner_join(dat, by = c("fips" = "combined_fips")) %>%
+                mutate(color = per_dem - per_gop)
+states <- map_data(map = "state")
+head(counties,2)
+```
+
+
+## You can also Do This:
+
+```{r l7ggplot7,fig.width=9, fig.height=6, cache=TRUE, echo=FALSE, out.width='900px',out.height='600px'}
+ggplot() + geom_polygon(data = counties, 
+               aes(x = long, y = lat, group = group, fill = color), color =NA) +   geom_polygon(data = states, aes(x = long, y = lat, group = group), 
+               color = "black", size = 0.2, fill = NA) + 
+  scale_fill_gradient2(low = "red", high = "blue", mid = "white") + coord_map(projection = "albers", lat0 = 20, lat1 = 50) + 
+  guides(fill = F) + ggtitle("2016 Presidential Elections at County Level")+theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+## Interim Summary
+
+ - `maps` allows easy state/county boundary plotting in the US, and at least national boundaries elsewhere.
+ - `ggplot2` function `map_data` converts `maps` maps for geographically-aware `ggplot` plotting, plus the usual `ggplot` capabilities.
+
+<b>Ok, your turn: re-create the 2016 election combo on your machine, and find a way to highlight the counties with $<1\%$ margin.</b>
+
+
+## Realistic Background Maps with `ggmap`? {.build}
+
+```{r l7ggmap0,eval=FALSE}
+library(ggmap)
+wash <- get_map(location = "Washington State", zoom = 7)
+ggmap(wash)
+```
+
+
+## maptools
+Maptools allows you to read in and manipulate spatial data. While most of the other packages discussed here are focused on plotting and analyses, maptools is used for reading, writing, and exporting spatial data. From KML, SHP, and ASCII, if your data have coordinates you can use maptools to explore the information in it. There are a number of functions that make importing spatial data as easy as possible.
+
+## Hicharter Maps 
+https://jkunst.com/highcharter/articles/maps.html
+
+```{r highcharter 1}
+hcmap("countries/nz/nz-all")
+```
+
+```{r highcharter 2}
+hcmap("custom/usa-and-canada", showInLegend = FALSE)
+```
+
+```{r highcharter 3}
+hcmap("countries/us/us-ca-all") |>
+  hc_title(text = "California") |> 
+  hc_subtitle(text = "You can use the same functions to modify your map!")
+```
+
+```{r highcarter 4}
+mapdata <- get_data_from_map(download_map_data("custom/usa-and-canada"))
+
+glimpse(mapdata)
+```
+
+```{r highcarter 5}
+data_fake <- mapdata |>
+  dplyr::select(code = `hc-a2`) |>
+  mutate(value = 1e5 * abs(rt(nrow(mapdata), df = 10)))
+
+hcmap(
+  "custom/usa-and-canada",
+  data = data_fake,
+  value = "value",
+  joinBy = c("hc-a2", "code"),
+  name = "Fake data",
+  dataLabels = list(enabled = TRUE, format = "{point.name}"),
+  borderColor = "#FAFAFA",
+  borderWidth = 0.1,
+  tooltip = list(
+    valueDecimals = 2,
+    valuePrefix = "$",
+    valueSuffix = "USD"
+  )
+)
+```
+
+## Categorized Area
+
+```{r highcarter 6}
+data <- tibble(
+  country = 
+    c("PT", "IE", "GB", "IS",
+      
+      "NO", "SE", "DK", "DE", "NL", "BE", "LU", "ES", "FR", "PL", "CZ", "AT",
+      "CH", "LI", "SK", "HU", "SI", "IT", "SM", "HR", "BA", "YF", "ME", "AL", "MK",
+      
+      "FI", "EE", "LV", "LT", "BY", "UA", "MD", "RO", "BG", "GR", "TR", "CY",
+      
+      "RU"),  
+  tz = c(rep("UTC", 4), rep("UTC + 1",25), rep("UCT + 2",12), "UTC + 3")
+  )
+
+# auxiliar variable
+data <- data |> 
+  mutate(value = cumsum(!duplicated(tz)))
+
+
+# now we'll create the dataClasses
+dta_clss <- data |> 
+  mutate(value = cumsum(!duplicated(tz))) |> 
+  group_by(tz) |> 
+  summarise(value = unique(value)) |> 
+  arrange(value) |> 
+  rename(name = tz, from = value) |> 
+  mutate(to = from + 1) |> 
+  list_parse()
+
+hcmap(
+  map = "custom/europe",
+  data = data, 
+  joinBy = c("iso-a2","country"),
+  name = "Time zone",
+  value = "value",
+  tooltip = list(pointFormat = "{point.name} {point.tz}"),
+  dataLabels = list(enabled = TRUE, format = "{point.country}")
+  ) |>
+  hc_colorAxis(
+    dataClassColor = "category",
+    dataClasses = dta_clss
+    ) |> 
+  hc_title(text = "Europe Time Zones")
+```
+
+## Adding Points
+```{r highcarter 7}
+cities <- data.frame(
+  name = c("London", "Birmingham", "Glasgow", "Liverpool"),
+  lat = c(51.507222, 52.483056, 55.858, 53.4),
+  lon = c(-0.1275, -1.893611, -4.259, -3),
+  z = c(1, 2, 3, 2)
+)
+
+hcmap("countries/gb/gb-all", showInLegend = FALSE) |>
+  hc_add_series(
+    data = cities, 
+    type = "mappoint",
+    name = "Cities", 
+    minSize = "1%",
+    maxSize = "5%"
+    ) |>
+  hc_mapNavigation(enabled = TRUE)
+```
